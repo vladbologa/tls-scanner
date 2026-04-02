@@ -315,6 +315,29 @@ func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfi
 		return nil
 	}
 
+	// Split jobs into direct-TLS and STARTTLS groups.
+	var directJobs []ScanJob
+	starttlsGroups := make(map[string][]ScanJob)
+	for _, job := range jobs {
+		if proto := starttlsProtocol(job.Port); proto != "" {
+			starttlsGroups[proto] = append(starttlsGroups[proto], job)
+		} else {
+			directJobs = append(directJobs, job)
+		}
+	}
+
+	var results []portScanResult
+	if len(directJobs) > 0 {
+		results = append(results, scanBatchGroup(directJobs, concurrentScans, "", client, tlsConfig, policy, timeouts)...)
+	}
+	for proto, protoJobs := range starttlsGroups {
+		results = append(results, scanBatchGroup(protoJobs, concurrentScans, proto, client, tlsConfig, policy, timeouts)...)
+	}
+
+	return results
+}
+
+func scanBatchGroup(jobs []ScanJob, concurrentScans int, starttls string, client *k8s.Client, tlsConfig *k8s.TLSSecurityProfile, policy *ComponentPolicy, timeouts ScanTimeouts) []portScanResult {
 	jobIndex := make(map[string]ScanJob, len(jobs))
 	targets := make([]string, 0, len(jobs))
 	for _, job := range jobs {
@@ -339,7 +362,11 @@ func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfi
 	outputFile.Close()
 	defer os.Remove(outputFileName)
 
-	slog.Info("running testssl.sh batch scan", "targets", len(targets), "maxParallel", concurrentScans)
+	label := "testssl.sh[batch]"
+	if starttls != "" {
+		label = fmt.Sprintf("testssl.sh[batch-starttls-%s]", starttls)
+	}
+	slog.Info("running batch scan", "label", label, "targets", len(targets), "maxParallel", concurrentScans)
 	perTarget := time.Duration(timeouts.PerTargetSeconds) * time.Second
 	timeout := perTarget*time.Duration(len(targets)) + 2*time.Minute
 	slog.Debug("batch timeout set", "timeout", timeout)
@@ -347,33 +374,37 @@ func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfi
 	defer cancel()
 
 	connectTimeoutStr := strconv.Itoa(timeouts.ConnectTimeout)
-	cmd := exec.CommandContext(ctx, "testssl.sh", "-p", "-s", "-f", "-E",
+	args := []string{"-p", "-s", "-f", "-E",
 		"--connect-timeout", connectTimeoutStr,
 		"--openssl-timeout", connectTimeoutStr,
 		"--file", targetsFile,
 		"--jsonfile", outputFileName,
 		"--warnings", "off",
 		"--color", "0",
-		"--parallel")
+		"--parallel"}
+	if starttls != "" {
+		args = append(args, "--starttls", starttls)
+	}
+	cmd := exec.CommandContext(ctx, "testssl.sh", args...)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("MAX_PARALLEL=%d", concurrentScans))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	stop := timing.Timings.Track("testssl.sh[batch]", fmt.Sprintf("%d targets", len(targets)))
+	stop := timing.Timings.Track(label, fmt.Sprintf("%d targets", len(targets)))
 	cmdErr := cmd.Run()
 	stop()
 
 	if cmdErr != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			slog.Error("testssl.sh batch timed out, partial results may be available", "timeout", timeout, "targets", len(targets))
+			slog.Error("batch scan timed out, partial results may be available", "label", label, "timeout", timeout, "targets", len(targets))
 		} else {
-			slog.Warn("testssl.sh batch exited non-zero", "error", cmdErr)
+			slog.Warn("batch scan exited non-zero", "label", label, "error", cmdErr)
 		}
 	}
 
 	jsonData, readErr := os.ReadFile(outputFileName)
 	if readErr != nil || len(jsonData) == 0 {
-		slog.Error("testssl.sh batch produced no output", "error", readErr)
+		slog.Error("batch scan produced no output", "label", label, "error", readErr)
 		return nil
 	}
 
@@ -397,10 +428,11 @@ func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfi
 		scanResult := ParseTestSSLOutput(portData, job.IP, strconv.Itoa(job.Port))
 
 		portResult := PortResult{
-			Port:     job.Port,
-			Protocol: "tcp",
-			State:    "open",
-			Service:  "ssl/tls",
+			Port:             job.Port,
+			Protocol:         "tcp",
+			State:            "open",
+			Service:          "ssl/tls",
+			STARTTLSProtocol: starttls,
 		}
 
 		portResult.TlsVersions = ExtractTLSInfo(scanResult)
@@ -450,11 +482,12 @@ func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfi
 		results = append(results, portScanResult{
 			ip: job.IP, pod: job.Pod, component: job.Component,
 			result: PortResult{
-				Port:     job.Port,
-				Protocol: "tcp",
-				State:    "open",
-				Status:   StatusNoTLS,
-				Reason:   "No TLS data returned from batch scan",
+				Port:             job.Port,
+				Protocol:         "tcp",
+				State:            "open",
+				Status:           StatusNoTLS,
+				Reason:           "No TLS data returned from batch scan",
+				STARTTLSProtocol: starttls,
 			},
 		})
 	}
@@ -636,6 +669,17 @@ func writeTargetsFile(targets []string) (string, error) {
 	}
 	f.Close()
 	return f.Name(), nil
+}
+
+// starttlsProtocol returns the testssl.sh --starttls protocol name for a port,
+// or "" if the port uses direct TLS.
+func starttlsProtocol(port int) string {
+	switch port {
+	case 5432:
+		return "postgres"
+	default:
+		return ""
+	}
 }
 
 func targetKey(host, port string) string {

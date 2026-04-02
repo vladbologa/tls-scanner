@@ -14,7 +14,7 @@ import (
 )
 
 var csvColumns = []string{
-	"IP", "Port", "Protocol", "Service", "Pod Name", "Namespace", "Component Name", "Component Maintainer",
+	"IP", "Port", "Protocol", "Service", "STARTTLS Protocol", "Pod Name", "Namespace", "Component Name", "Component Maintainer",
 	"Process", "TLS Ciphers", "TLS Version", "TLS Supported Groups", "Status", "Reason", "Listen Address",
 	"TLS 1.3 Supported", "ML-KEM Supported", "ML-KEM KEMs", "All KEMs",
 	"TLS 1.3 Offered", "TLS 1.2 Only", "PQC Capable", "Readiness Notes",
@@ -124,6 +124,7 @@ func WriteCSVOutput(results scanner.ScanResults, filename string) error {
 				"Port":                          port,
 				"Protocol":                      stringOrNA(portResult.Protocol),
 				"Service":                       stringOrNA(portResult.Service),
+				"STARTTLS Protocol":             stringOrNA(portResult.STARTTLSProtocol),
 				"Pod Name":                      podName,
 				"Namespace":                     namespace,
 				"Component Name":                componentName,

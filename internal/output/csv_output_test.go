@@ -89,8 +89,8 @@ func TestWriteCSVOutput(t *testing.T) {
 	if rows[1][0] != "10.0.0.1" || rows[1][1] != "443" {
 		t.Fatalf("unexpected ip/port values: %#v", rows[1][:2])
 	}
-	if rows[1][15] != "Yes" || rows[1][16] != "Yes" {
-		t.Fatalf("unexpected yes/no formatting for TLS13/ML-KEM: %q %q", rows[1][15], rows[1][16])
+	if rows[1][16] != "Yes" || rows[1][17] != "Yes" {
+		t.Fatalf("unexpected yes/no formatting for TLS13/ML-KEM: %q %q", rows[1][16], rows[1][17])
 	}
 }
 
