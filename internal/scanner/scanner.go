@@ -24,40 +24,36 @@ type portScanResult struct {
 	result    PortResult
 }
 
-func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy) ScanResults {
-	defer timing.Timings.Track("performClusterScan", "")()
-	startTime := time.Now()
+type DiscoveryResults struct {
+	ScanJobs []ScanJob
+	Skipped  []portScanResult
+}
 
-	totalIPs := 0
-	for _, pod := range pods {
-		totalIPs += len(pod.IPs)
+func (d DiscoveryResults) SkippedPorts() []SkippedPort {
+	out := make([]SkippedPort, len(d.Skipped))
+	for i, s := range d.Skipped {
+		out[i] = SkippedPort{
+			IP:           s.ip,
+			Port:         s.result.Port,
+			PodName:      s.pod.Name,
+			PodNamespace: s.pod.Namespace,
+			Status:       s.result.Status,
+			Reason:       s.result.Reason,
+		}
 	}
+	return out
+}
+
+func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client) DiscoveryResults {
+	defer timing.Timings.Track("discoverTargets", "")()
 
 	discoveryWorkers := max(2, concurrentScans/2)
-
-	fmt.Printf("========================================\n")
-	fmt.Printf("CLUSTER SCAN STARTING\n")
-	fmt.Printf("========================================\n")
-	fmt.Printf("Total Pods: %d\n", len(pods))
-	fmt.Printf("Total IPs: %d\n", totalIPs)
-	fmt.Printf("Discovery workers: %d\n", discoveryWorkers)
-	fmt.Printf("MAX_PARALLEL (testssl): %d\n", concurrentScans)
-	fmt.Printf("========================================\n\n")
 
 	progress := NewProgressTracker(len(pods))
 	progress.Start(15 * time.Second)
 
-	var tlsConfig *k8s.TLSSecurityProfile
-	if client != nil {
-		if config, err := client.GetTLSSecurityProfile(); err != nil {
-			slog.Warn("could not collect TLS security profiles", "error", err)
-		} else {
-			tlsConfig = config
-		}
-	}
-
 	var scanJobs []ScanJob
-	var localhostResults []portScanResult
+	var skipped []portScanResult
 	var mu sync.Mutex
 
 	discoveryChan := make(chan k8s.PodInfo, len(pods))
@@ -123,7 +119,7 @@ func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Cli
 					if len(openPorts) == 0 {
 						progress.PortSkipped()
 						mu.Lock()
-						localhostResults = append(localhostResults, portScanResult{
+						skipped = append(skipped, portScanResult{
 							ip:        ip,
 							pod:       pod,
 							component: component,
@@ -155,7 +151,7 @@ func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Cli
 								}
 								progress.PortSkipped()
 								mu.Lock()
-								localhostResults = append(localhostResults, portScanResult{
+								skipped = append(skipped, portScanResult{
 									ip: ip, pod: pod, component: component, result: pr,
 								})
 								mu.Unlock()
@@ -183,7 +179,7 @@ func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Cli
 							}
 							progress.PortSkipped()
 							mu.Lock()
-							localhostResults = append(localhostResults, portScanResult{
+							skipped = append(skipped, portScanResult{
 								ip: ip, pod: pod, component: component, result: pr,
 							})
 							mu.Unlock()
@@ -213,9 +209,42 @@ func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Cli
 	fmt.Printf("\n=== DISCOVERY COMPLETE: %d pods -> %d scan jobs (%d deduplicated), %d skipped ===\n\n",
 		progress.discoveredPods.Load(), len(scanJobs), beforeDedup-len(scanJobs), progress.skippedPorts.Load())
 
-	batchResults := batchScan(scanJobs, concurrentScans, client, tlsConfig, policy)
+	return DiscoveryResults{ScanJobs: scanJobs, Skipped: skipped}
+}
 
-	results := assembleResults(startTime, totalIPs, tlsConfig, localhostResults, batchResults)
+func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy) ScanResults {
+	defer timing.Timings.Track("performClusterScan", "")()
+	startTime := time.Now()
+
+	totalIPs := 0
+	for _, pod := range pods {
+		totalIPs += len(pod.IPs)
+	}
+
+	fmt.Printf(`========================================
+CLUSTER SCAN STARTING
+========================================
+Total Pods: %d
+Total IPs: %d
+MAX_PARALLEL (testssl): %d
+========================================
+
+`, len(pods), totalIPs, concurrentScans)
+
+	var tlsConfig *k8s.TLSSecurityProfile
+	if client != nil {
+		if config, err := client.GetTLSSecurityProfile(); err != nil {
+			slog.Warn("could not collect TLS security profiles", "error", err)
+		} else {
+			tlsConfig = config
+		}
+	}
+
+	discovery := DiscoverTargets(pods, concurrentScans, client)
+
+	batchResults := batchScan(discovery.ScanJobs, concurrentScans, client, tlsConfig, policy)
+
+	results := assembleResults(startTime, totalIPs, tlsConfig, discovery.Skipped, batchResults)
 
 	duration := time.Since(startTime)
 	fmt.Printf("\n========================================\n")
@@ -223,7 +252,7 @@ func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Cli
 	fmt.Printf("========================================\n")
 	fmt.Printf("Total IPs processed: %d\n", results.ScannedIPs)
 	fmt.Printf("Total ports scanned: %d\n", len(batchResults))
-	fmt.Printf("Total ports skipped: %d\n", progress.skippedPorts.Load())
+	fmt.Printf("Total ports skipped: %d\n", len(discovery.Skipped))
 	fmt.Printf("Total time: %v\n", duration)
 	if len(batchResults) > 0 {
 		fmt.Printf("Throughput: %.2f ports/min\n", float64(len(batchResults))/duration.Minutes())

@@ -159,6 +159,15 @@ type ScanJob struct {
 	Component *k8s.OpenshiftComponent
 }
 
+type SkippedPort struct {
+	IP           string
+	Port         int
+	PodName      string
+	PodNamespace string
+	Status       ScanStatus
+	Reason       string
+}
+
 var TLSVersionValueMap = map[string]int{
 	"TLSv1.0":      10,
 	"TLSv1.1":      11,

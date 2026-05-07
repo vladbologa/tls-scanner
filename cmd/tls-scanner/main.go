@@ -69,6 +69,7 @@ func run(args []string) (exitCode int) {
 	logFile := fs.String("log-file", "", "Redirect all log output to the specified file")
 	pqcCheck := fs.Bool("pqc-check", false, "Quick check for TLS 1.3 and ML-KEM (post-quantum) support only")
 	timingFile := fs.String("timing-file", "", "Output timing report to specified file in artifact-dir")
+	dryRun := fs.Bool("dry-run", false, "Discover scan targets and print them without scanning")
 	showVersion := fs.Bool("version", false, "Print version and exit")
 	logLevel := fs.String("log-level", "info", "Log level: debug, info, warn, error")
 
@@ -130,7 +131,7 @@ func run(args []string) (exitCode int) {
 		}
 	}()
 
-	if !scanner.IsTestSSLInstalled() {
+	if !*dryRun && !scanner.IsTestSSLInstalled() {
 		slog.Error("testssl.sh is not installed or not in the system's PATH")
 		return 1
 	}
@@ -166,6 +167,11 @@ func run(args []string) (exitCode int) {
 		if len(jobs) == 0 {
 			slog.Error("no valid targets found in --targets flag")
 			return 1
+		}
+
+		if *dryRun {
+			output.PrintDryRunTargets(jobs)
+			return 0
 		}
 
 		scanResults := scanner.Scan(jobs, *concurrentScans, nil, nil, policy)
@@ -247,6 +253,12 @@ func run(args []string) (exitCode int) {
 		}
 	}
 
+	if len(pods) > 0 && *dryRun {
+		discovery := scanner.DiscoverTargets(pods, *concurrentScans, client)
+		output.PrintDryRunResults(discovery)
+		return 0
+	}
+
 	if len(pods) > 0 {
 		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy)
 		finalScanResults = &scanResults
@@ -271,6 +283,12 @@ func run(args []string) (exitCode int) {
 	}
 
 	jobs := []scanner.ScanJob{{IP: normalizeHost(*host), Port: portNum}}
+
+	if *dryRun {
+		output.PrintDryRunTargets(jobs)
+		return 0
+	}
+
 	scanResults := scanner.Scan(jobs, *concurrentScans, client, nil, policy)
 	finalScanResults = &scanResults
 
