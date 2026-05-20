@@ -14,14 +14,14 @@ import (
 func WriteJSONOutput(data interface{}, filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %v", err)
+		return fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer file.Close()
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(data); err != nil {
-		return fmt.Errorf("failed to encode JSON: %v", err)
+		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
 
 	slog.Info("JSON output written", "path", filename)
@@ -34,7 +34,7 @@ func WriteOutputFiles(results scanner.ScanResults, artifactDir, jsonFile, csvFil
 	}
 
 	if err := os.MkdirAll(artifactDir, 0755); err != nil {
-		return fmt.Errorf("could not create artifact directory %s: %v", artifactDir, err)
+		return fmt.Errorf("could not create artifact directory %s: %w", artifactDir, err)
 	}
 	slog.Info("artifacts directory created", "path", artifactDir)
 

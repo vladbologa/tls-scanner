@@ -28,7 +28,7 @@ func WriteCSVOutput(results scanner.ScanResults, filename string) error {
 
 	file, err := os.Create(filename)
 	if err != nil {
-		return fmt.Errorf("failed to create CSV file: %v", err)
+		return fmt.Errorf("failed to create CSV file: %w", err)
 	}
 	defer file.Close()
 
@@ -36,7 +36,7 @@ func WriteCSVOutput(results scanner.ScanResults, filename string) error {
 	defer writer.Flush()
 
 	if err := writer.Write(csvColumns); err != nil {
-		return fmt.Errorf("failed to write CSV header: %v", err)
+		return fmt.Errorf("failed to write CSV header: %w", err)
 	}
 
 	rowCount := 0
@@ -180,7 +180,7 @@ func WriteCSVOutput(results scanner.ScanResults, filename string) error {
 
 			row := buildCSVRow(csvColumns, rowData)
 			if err := writer.Write(row); err != nil {
-				return fmt.Errorf("failed to write CSV row: %v", err)
+				return fmt.Errorf("failed to write CSV row: %w", err)
 			}
 			rowCount++
 		}
@@ -199,7 +199,7 @@ func WriteScanErrorsCSV(results scanner.ScanResults, filename string) error {
 
 	file, err := os.Create(filename)
 	if err != nil {
-		return fmt.Errorf("failed to create scan errors CSV file: %v", err)
+		return fmt.Errorf("failed to create scan errors CSV file: %w", err)
 	}
 	defer file.Close()
 
@@ -208,7 +208,7 @@ func WriteScanErrorsCSV(results scanner.ScanResults, filename string) error {
 
 	header := []string{"IP", "Port", "Error Type", "Error Message", "Pod Name", "Namespace", "Container"}
 	if err := writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write scan errors CSV header: %v", err)
+		return fmt.Errorf("failed to write scan errors CSV header: %w", err)
 	}
 
 	for _, scanError := range results.ScanErrors {
@@ -223,7 +223,7 @@ func WriteScanErrorsCSV(results scanner.ScanResults, filename string) error {
 		}
 
 		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("failed to write scan error row: %v", err)
+			return fmt.Errorf("failed to write scan error row: %w", err)
 		}
 	}
 

@@ -50,7 +50,7 @@ func (c *Client) GetTLSSecurityProfile() (*TLSSecurityProfile, error) {
 func (c *Client) getIngressControllerTLS(fallback *APIServerTLSProfile) (*IngressTLSProfile, error) {
 	ingress, err := c.operatorClient.OperatorV1().IngressControllers("openshift-ingress-operator").Get(context.Background(), "default", metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get IngressController custom resource: %v", err)
+		return nil, fmt.Errorf("failed to get IngressController custom resource: %w", err)
 	}
 
 	profile := &IngressTLSProfile{}
@@ -125,7 +125,7 @@ func extractAPIServerTLS(apiserver *configv1.APIServer) *APIServerTLSProfile {
 func (c *Client) getKubeletTLS(fallback *APIServerTLSProfile) (*KubeletTLSProfile, error) {
 	kubeletConfigs, err := c.mcfgClient.MachineconfigurationV1().KubeletConfigs().List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list KubeletConfigs: %v", err)
+		return nil, fmt.Errorf("failed to list KubeletConfigs: %w", err)
 	}
 
 	for _, kc := range kubeletConfigs.Items {

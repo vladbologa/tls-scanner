@@ -53,12 +53,12 @@ func (tc *Collector) WriteReport(filename string) error {
 
 	dir := filepath.Dir(filename)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("could not create directory for timing report: %v", err)
+		return fmt.Errorf("could not create directory for timing report: %w", err)
 	}
 
 	f, err := os.Create(filename)
 	if err != nil {
-		return fmt.Errorf("could not create timing report: %v", err)
+		return fmt.Errorf("could not create timing report: %w", err)
 	}
 	defer f.Close()
 

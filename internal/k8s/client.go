@@ -24,7 +24,7 @@ func NewClient() (*Client, error) {
 		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 		config, err = clientcmd.BuildConfigFromFlags("", loadingRules.GetDefaultFilename())
 		if err != nil {
-			return nil, fmt.Errorf("could not get kubernetes config: %v", err)
+			return nil, fmt.Errorf("could not get kubernetes config: %w", err)
 		}
 		slog.Info("Successfully created Kubernetes client from kubeconfig file")
 	}
@@ -36,22 +36,22 @@ func NewClient() (*Client, error) {
 
 	configClient, err := configclientset.NewForConfig(config)
 	if err != nil {
-		return nil, fmt.Errorf("could not create openshift config client: %v", err)
+		return nil, fmt.Errorf("could not create openshift config client: %w", err)
 	}
 
 	operatorClient, err := operatorclientset.NewForConfig(config)
 	if err != nil {
-		return nil, fmt.Errorf("could not create openshift operator client: %v", err)
+		return nil, fmt.Errorf("could not create openshift operator client: %w", err)
 	}
 
 	mcfgClient, err := mcfgclientset.NewForConfig(config)
 	if err != nil {
-		return nil, fmt.Errorf("could not create openshift machineconfig client: %v", err)
+		return nil, fmt.Errorf("could not create openshift machineconfig client: %w", err)
 	}
 
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		return nil, fmt.Errorf("could not create dynamic client: %v", err)
+		return nil, fmt.Errorf("could not create dynamic client: %w", err)
 	}
 
 	namespace := "default"
