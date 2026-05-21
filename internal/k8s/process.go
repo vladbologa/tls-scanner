@@ -121,6 +121,9 @@ func ParseLsofOutput(output string, ips []string, namespace, podName string) (ma
 			}
 		}
 	}
+	if err := sc.Err(); err != nil {
+		slog.Warn("lsof: scanner error, output may be truncated", "namespace", namespace, "pod", podName, "error", err)
+	}
 
 	return processMap, listenInfoMap
 }
