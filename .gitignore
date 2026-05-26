@@ -12,3 +12,6 @@ bench.sh
 
 # test coverage
 coverage.out
+
+# prow job results
+tls_failure_report.txt
