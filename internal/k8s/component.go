@@ -104,7 +104,7 @@ func (c *Client) getComponentFromClusterMetadata(image string) (*OpenshiftCompon
 
 	pods, err := c.clientset.CoreV1().Pods("").List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list pods for image metadata: %v", err)
+		return nil, fmt.Errorf("failed to list pods for image metadata: %w", err)
 	}
 
 	for _, pod := range pods.Items {
@@ -128,7 +128,6 @@ func (c *Client) getComponentFromClusterMetadata(image string) (*OpenshiftCompon
 		IsBundle:            false,
 	}, nil
 }
-
 
 func (c *Client) extractComponentNameFromImage(image string) string {
 	parts := strings.Split(image, "/")
@@ -158,11 +157,11 @@ func (c *Client) extractRegistryFromImage(image string) string {
 
 // extractComponentFromPod returns a component name for a pod based on the following order
 // of precedence:
-//   1. label named 'app' 
-//   2. label named 'component'
-//   3. label named 'app.kubernetes.io/name'
-//   4. container.Name
-//   5. name determined from container.Image 
+//  1. label named 'app'
+//  2. label named 'component'
+//  3. label named 'app.kubernetes.io/name'
+//  4. container.Name
+//  5. name determined from container.Image
 func (c *Client) extractComponentFromPod(pod v1.Pod, container v1.Container) string {
 	if component, exists := pod.Labels["app"]; exists {
 		return component

@@ -43,7 +43,7 @@ func (c *Client) GetProcessMapForPod(pod PodInfo) (map[string]map[int]string, ma
 
 	executor, err := remotecommand.NewSPDYExecutor(c.restCfg, "POST", req.URL())
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create executor for pod %s: %v", pod.Name, err)
+		return nil, nil, fmt.Errorf("failed to create executor for pod %s: %w", pod.Name, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -63,7 +63,7 @@ func (c *Client) GetProcessMapForPod(pod PodInfo) (map[string]map[int]string, ma
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, nil, fmt.Errorf("lsof exec TIMED OUT in pod %s/%s (30s)", pod.Namespace, pod.Name)
 		}
-		return nil, nil, fmt.Errorf("exec failed on pod %s: %v, stdout: %s, stderr: %s", pod.Name, err, stdout.String(), stderr.String())
+		return nil, nil, fmt.Errorf("exec failed on pod %s (stdout: %s, stderr: %s): %w", pod.Name, stdout.String(), stderr.String(), err)
 	}
 
 	if stdout.Len() == 0 {

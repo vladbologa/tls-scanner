@@ -110,23 +110,23 @@ func WriteJUnitOutput(scanResults scanner.ScanResults, filename string, pqcCheck
 
 	dir := filepath.Dir(filename)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("could not create directory for JUnit report: %v", err)
+		return fmt.Errorf("could not create directory for JUnit report: %w", err)
 	}
 
 	file, err := os.Create(filename)
 	if err != nil {
-		return fmt.Errorf("could not create JUnit report file: %v", err)
+		return fmt.Errorf("could not create JUnit report file: %w", err)
 	}
 	defer file.Close()
 
 	if _, err := file.WriteString(xml.Header); err != nil {
-		return fmt.Errorf("failed to write XML header to JUnit report: %v", err)
+		return fmt.Errorf("failed to write XML header to JUnit report: %w", err)
 	}
 
 	encoder := xml.NewEncoder(file)
 	encoder.Indent("", "  ")
 	if err := encoder.Encode(testSuite); err != nil {
-		return fmt.Errorf("could not encode JUnit report: %v", err)
+		return fmt.Errorf("could not encode JUnit report: %w", err)
 	}
 
 	return nil
