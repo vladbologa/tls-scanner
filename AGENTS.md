@@ -38,6 +38,10 @@ make coverage     # Test coverage report
 
 Prow runs presubmits via ci-operator config at `ci-operator/config/openshift/tls-scanner/` in openshift/release. Current checks: `unit` (`make test`), `images`, optional `smoke-tls`. Periodics run full cluster scans on AWS.
 
+## AI code review (Qodo)
+
+`.pr_agent.toml` configures [Qodo](https://docs.qodo.ai) to run `/agentic_review` automatically when a PR is opened. Reviews appear as a persistent summary comment. Requires a Red Hat Qodo license to trigger. See the [Qodo docs](https://docs.qodo.ai/code-review/get-started/configuration-overview/configuration-file) for config options.
+
 ## Conventions
 
 - Go 1.25+, `CGO_ENABLED=0` static builds
