@@ -72,6 +72,8 @@ func run(args []string) (exitCode int) {
 	dryRun := fs.Bool("dry-run", false, "Discover scan targets and print them without scanning")
 	showVersion := fs.Bool("version", false, "Print version and exit")
 	logLevel := fs.String("log-level", "info", "Log level: debug, info, warn, error")
+	scanTimeoutPerTarget := fs.Int("scan-timeout-per-target", scanner.DefaultScanTimeouts.PerTargetSeconds, "Seconds per target for batch scan timeout calculation")
+	connectTimeout := fs.Int("connect-timeout", scanner.DefaultScanTimeouts.ConnectTimeout, "Timeout in seconds for testssl.sh connect and openssl operations")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -112,6 +114,16 @@ func run(args []string) (exitCode int) {
 		}
 		fmt.Printf("Template written to %s\n", *generateTemplate)
 		return 0
+	}
+
+	if *scanTimeoutPerTarget <= 0 || *connectTimeout <= 0 {
+		fmt.Fprintln(os.Stderr, "Error: --scan-timeout-per-target and --connect-timeout must be positive integers")
+		return 2
+	}
+
+	timeouts := scanner.ScanTimeouts{
+		PerTargetSeconds: *scanTimeoutPerTarget,
+		ConnectTimeout:   *connectTimeout,
 	}
 
 	policy, err := scanner.Policy()
@@ -174,7 +186,7 @@ func run(args []string) (exitCode int) {
 			return 0
 		}
 
-		scanResults := scanner.Scan(jobs, *concurrentScans, nil, nil, policy)
+		scanResults := scanner.Scan(jobs, *concurrentScans, nil, nil, policy, timeouts)
 		finalScanResults = &scanResults
 
 		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
@@ -197,7 +209,7 @@ func run(args []string) (exitCode int) {
 			return 1
 		}
 
-		scanResults := scanner.Scan(jobs, *concurrentScans, nil, nil, policy)
+		scanResults := scanner.Scan(jobs, *concurrentScans, nil, nil, policy, timeouts)
 		finalScanResults = &scanResults
 
 		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
@@ -260,7 +272,7 @@ func run(args []string) (exitCode int) {
 	}
 
 	if len(pods) > 0 {
-		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy)
+		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy, timeouts)
 		finalScanResults = &scanResults
 
 		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
@@ -289,7 +301,7 @@ func run(args []string) (exitCode int) {
 		return 0
 	}
 
-	scanResults := scanner.Scan(jobs, *concurrentScans, client, nil, policy)
+	scanResults := scanner.Scan(jobs, *concurrentScans, client, nil, policy, timeouts)
 	finalScanResults = &scanResults
 
 	if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {

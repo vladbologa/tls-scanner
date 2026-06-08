@@ -152,6 +152,16 @@ type KeyExchangeInfo struct {
 	ForwardSecrecy *ForwardSecrecy `json:"forward_secrecy,omitempty"`
 }
 
+type ScanTimeouts struct {
+	PerTargetSeconds int
+	ConnectTimeout   int
+}
+
+var DefaultScanTimeouts = ScanTimeouts{
+	PerTargetSeconds: 90,
+	ConnectTimeout:   5,
+}
+
 type ScanJob struct {
 	IP        string
 	Port      int

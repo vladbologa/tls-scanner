@@ -17,7 +17,10 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-const procStateListen = "0A"
+const (
+	procStateListen = "0A"
+	podExecTimeout  = 30 * time.Second
+)
 
 func DiscoverPortsFromPodSpec(pod *v1.Pod) ([]int, error) {
 	slog.Debug("discovering ports from API server", "namespace", pod.Namespace, "pod", pod.Name)
@@ -99,7 +102,7 @@ func (c *Client) DiscoverPortsFromProc(pod PodInfo) ([]int, error) {
 		return nil, fmt.Errorf("failed to create executor for pod %s/%s: %w", pod.Namespace, pod.Name, err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), podExecTimeout)
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer

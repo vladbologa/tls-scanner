@@ -220,7 +220,7 @@ func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client
 	return DiscoveryResults{ScanJobs: scanJobs, Skipped: skipped}
 }
 
-func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy) ScanResults {
+func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy, timeouts ScanTimeouts) ScanResults {
 	defer timing.Timings.Track("performClusterScan", "")()
 	startTime := time.Now()
 
@@ -250,7 +250,7 @@ MAX_PARALLEL (testssl): %d
 
 	discovery := DiscoverTargets(pods, concurrentScans, client)
 
-	batchResults := batchScan(discovery.ScanJobs, concurrentScans, client, tlsConfig, policy)
+	batchResults := batchScan(discovery.ScanJobs, concurrentScans, client, tlsConfig, policy, timeouts)
 
 	results := assembleResults(startTime, totalIPs, tlsConfig, discovery.Skipped, batchResults)
 
@@ -272,7 +272,7 @@ MAX_PARALLEL (testssl): %d
 
 // Scan runs a batch testssl.sh scan on pre-built scan jobs.
 // Used by --targets and single-host paths (no k8s discovery needed).
-func Scan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8s.TLSSecurityProfile, policy *ComponentPolicy) ScanResults {
+func Scan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8s.TLSSecurityProfile, policy *ComponentPolicy, timeouts ScanTimeouts) ScanResults {
 	defer timing.Timings.Track("scan", "")()
 	startTime := time.Now()
 
@@ -287,7 +287,7 @@ func Scan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8
 	fmt.Printf("MAX_PARALLEL: %d\n", concurrentScans)
 	fmt.Printf("========================================\n\n")
 
-	batchResults := batchScan(jobs, concurrentScans, client, tlsConfig, policy)
+	batchResults := batchScan(jobs, concurrentScans, client, tlsConfig, policy, timeouts)
 	results := assembleResults(startTime, 0, tlsConfig, batchResults)
 
 	duration := time.Since(startTime)
@@ -305,7 +305,7 @@ func Scan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8
 	return results
 }
 
-func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8s.TLSSecurityProfile, policy *ComponentPolicy) []portScanResult {
+func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8s.TLSSecurityProfile, policy *ComponentPolicy, timeouts ScanTimeouts) []portScanResult {
 	if len(jobs) == 0 {
 		return nil
 	}
@@ -335,14 +335,16 @@ func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfi
 	defer os.Remove(outputFileName)
 
 	slog.Info("running testssl.sh batch scan", "targets", len(targets), "maxParallel", concurrentScans)
-	timeout := time.Duration(len(targets)*90+120) * time.Second
+	perTarget := time.Duration(timeouts.PerTargetSeconds) * time.Second
+	timeout := perTarget*time.Duration(len(targets)) + 2*time.Minute
 	slog.Debug("batch timeout set", "timeout", timeout)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	connectTimeoutStr := strconv.Itoa(timeouts.ConnectTimeout)
 	cmd := exec.CommandContext(ctx, "testssl.sh", "-p", "-s", "-f", "-E",
-		"--connect-timeout", "5",
-		"--openssl-timeout", "5",
+		"--connect-timeout", connectTimeoutStr,
+		"--openssl-timeout", connectTimeoutStr,
 		"--file", targetsFile,
 		"--jsonfile", outputFileName,
 		"--warnings", "off",

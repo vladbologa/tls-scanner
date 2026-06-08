@@ -9,7 +9,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -47,7 +46,7 @@ func (c *Client) GetProcessMapForPod(pod PodInfo) (map[string]map[int]string, ma
 		return nil, nil, fmt.Errorf("failed to create executor for pod %s: %w", pod.Name, err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), podExecTimeout)
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
