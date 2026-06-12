@@ -8,20 +8,18 @@ import (
 // for unit tests that don't need a real Kubernetes API server.
 func newTestClient() *Client {
 	return &Client{
-		processNameMap:            make(map[string]map[int]string),
-		listenInfoMap:             make(map[string]map[int]ListenInfo),
-		procListenAddrMap:         make(map[string]map[int]string),
-		processDiscoveryAttempted: make(map[string]bool),
+		processNameMap:    make(map[string]map[int]string),
+		listenInfoMap:     make(map[string]map[int]ListenInfo),
+		procListenAddrMap: make(map[string]map[int]string),
 	}
 }
 
-func TestIsLocalhostOnly_lsofData(t *testing.T) {
+func TestIsLocalhostOnly_procData(t *testing.T) {
 	c := newTestClient()
 
-	// Populate listenInfoMap as lsof would.
-	c.listenInfoMap["10.0.0.1"] = map[int]ListenInfo{
-		9259: {Port: 9259, ListenAddress: "127.0.0.1", ProcessName: "myprocess"},
-		9258: {Port: 9258, ListenAddress: "*", ProcessName: "myprocess"},
+	c.procListenAddrMap["10.0.0.1"] = map[int]string{
+		9259: "127.0.0.1",
+		9258: "0.0.0.0",
 	}
 
 	tests := []struct {
@@ -29,9 +27,9 @@ func TestIsLocalhostOnly_lsofData(t *testing.T) {
 		wantIs   bool
 		wantAddr string
 	}{
-		{9259, true, "127.0.0.1"}, // localhost in lsof data
-		{9258, false, ""},         // wildcard in lsof data
-		{9999, false, ""},         // unknown port
+		{9259, true, "127.0.0.1"},
+		{9258, false, ""},
+		{9999, false, ""},
 	}
 
 	for _, tt := range tests {
@@ -40,53 +38,6 @@ func TestIsLocalhostOnly_lsofData(t *testing.T) {
 			t.Errorf("IsLocalhostOnly(port=%d) = (%v, %q), want (%v, %q)",
 				tt.port, gotIs, gotAddr, tt.wantIs, tt.wantAddr)
 		}
-	}
-}
-
-func TestIsLocalhostOnly_procFallback(t *testing.T) {
-	c := newTestClient()
-
-	// No lsof data at all (secondary container scenario).
-	// Proc data covers all sockets via shared network namespace.
-	c.procListenAddrMap["10.0.0.1"] = map[int]string{
-		9260: "127.0.0.1", // secondary container's localhost port
-		9261: "0.0.0.0",   // secondary container's wildcard port
-	}
-
-	tests := []struct {
-		port     int
-		wantIs   bool
-		wantAddr string
-	}{
-		{9260, true, "127.0.0.1"}, // localhost via proc fallback
-		{9261, false, ""},         // wildcard — not localhost
-		{9999, false, ""},         // unknown
-	}
-
-	for _, tt := range tests {
-		gotIs, gotAddr := c.IsLocalhostOnly("10.0.0.1", tt.port)
-		if gotIs != tt.wantIs || gotAddr != tt.wantAddr {
-			t.Errorf("IsLocalhostOnly(port=%d) = (%v, %q), want (%v, %q)",
-				tt.port, gotIs, gotAddr, tt.wantIs, tt.wantAddr)
-		}
-	}
-}
-
-func TestIsLocalhostOnly_lsofTakesPrecedence(t *testing.T) {
-	c := newTestClient()
-
-	// lsof says port 9000 is wildcard; proc says it is localhost.
-	// lsof should win (it has richer context from the process perspective).
-	c.listenInfoMap["10.0.0.1"] = map[int]ListenInfo{
-		9000: {Port: 9000, ListenAddress: "*", ProcessName: "svc"},
-	}
-	c.procListenAddrMap["10.0.0.1"] = map[int]string{
-		9000: "127.0.0.1",
-	}
-
-	gotIs, _ := c.IsLocalhostOnly("10.0.0.1", 9000)
-	if gotIs {
-		t.Error("expected IsLocalhostOnly=false when lsof shows wildcard, even if proc shows localhost")
 	}
 }
 
@@ -100,6 +51,45 @@ func TestIsLocalhostOnly_ipv6Localhost(t *testing.T) {
 	gotIs, gotAddr := c.IsLocalhostOnly("10.0.0.2", 8080)
 	if !gotIs || gotAddr != "::1" {
 		t.Errorf("IsLocalhostOnly() = (%v, %q), want (true, %q)", gotIs, gotAddr, "::1")
+	}
+}
+
+func TestCacheProcListenInfo(t *testing.T) {
+	c := newTestClient()
+	pod := PodInfo{IPs: []string{"10.0.0.1"}}
+	entries := map[int]ProcListenEntry{
+		443:  {Addr: "0.0.0.0", Inode: 12345},
+		8080: {Addr: "127.0.0.1", Inode: 99}, // no inode mapping
+	}
+	inodeComm := map[uint64]string{12345: "nginx"}
+
+	c.cacheProcListenInfo(pod, entries, inodeComm)
+
+	if c.procListenAddrMap["10.0.0.1"][443] != "0.0.0.0" {
+		t.Errorf("procListenAddrMap[443] = %q, want 0.0.0.0", c.procListenAddrMap["10.0.0.1"][443])
+	}
+	if c.processNameMap["10.0.0.1"][443] != "nginx" {
+		t.Errorf("processNameMap[443] = %q, want nginx", c.processNameMap["10.0.0.1"][443])
+	}
+	if _, ok := c.processNameMap["10.0.0.1"][8080]; ok {
+		t.Error("expected no process name for port without inode mapping")
+	}
+}
+
+func TestGetCachedProcessMap(t *testing.T) {
+	c := newTestClient()
+	c.processNameMap["10.0.0.1"] = map[int]string{443: "nginx", 8443: "sidecar"}
+
+	got := c.GetCachedProcessMap([]string{"10.0.0.1", "10.0.0.2"})
+	if got["10.0.0.1"][443] != "nginx" || got["10.0.0.1"][8443] != "sidecar" {
+		t.Errorf("GetCachedProcessMap() = %v", got)
+	}
+	if _, ok := got["10.0.0.2"]; ok {
+		t.Error("expected no entry for IP without process data")
+	}
+
+	if c.GetCachedProcessMap(nil) != nil {
+		t.Error("expected nil for empty ips with no cache")
 	}
 }
 
@@ -151,100 +141,6 @@ func TestGetProcessName(t *testing.T) {
 	_, ok = c.GetProcessName("10.0.0.2", 443)
 	if ok {
 		t.Error("expected ok=false for unknown IP")
-	}
-}
-
-func TestParseLsofOutput(t *testing.T) {
-	tests := []struct {
-		name          string
-		output        string
-		ips           []string
-		wantProcesses map[string]map[int]string
-		wantListen    map[string]map[int]ListenInfo
-	}{
-		{
-			name:   "ipv4 wildcard",
-			output: "p1\ncmyproc\nn*:9099\n",
-			ips:    []string{"10.0.0.1"},
-			wantProcesses: map[string]map[int]string{
-				"10.0.0.1": {9099: "myproc"},
-			},
-			wantListen: map[string]map[int]ListenInfo{
-				"10.0.0.1": {9099: {Port: 9099, ListenAddress: "*", ProcessName: "myproc"}},
-			},
-		},
-		{
-			name:   "ipv4 localhost",
-			output: "p1\ncmyproc\nn127.0.0.1:8080\n",
-			ips:    []string{"10.0.0.1"},
-			wantProcesses: map[string]map[int]string{
-				"10.0.0.1": {8080: "myproc"},
-			},
-			wantListen: map[string]map[int]ListenInfo{
-				"10.0.0.1": {8080: {Port: 8080, ListenAddress: "127.0.0.1", ProcessName: "myproc"}},
-			},
-		},
-		{
-			name:   "ipv6 wildcard bracket notation",
-			output: "p1\nckube-rbac\nn[::]:8443\n",
-			ips:    []string{"10.0.0.1"},
-			wantProcesses: map[string]map[int]string{
-				"10.0.0.1": {8443: "kube-rbac"},
-			},
-			wantListen: map[string]map[int]ListenInfo{
-				"10.0.0.1": {8443: {Port: 8443, ListenAddress: "::", ProcessName: "kube-rbac"}},
-			},
-		},
-		{
-			name:   "ipv6 localhost bracket notation",
-			output: "p1\ncmetrics\nn[::1]:9090\n",
-			ips:    []string{"10.0.0.1"},
-			wantProcesses: map[string]map[int]string{
-				"10.0.0.1": {9090: "metrics"},
-			},
-			wantListen: map[string]map[int]ListenInfo{
-				"10.0.0.1": {9090: {Port: 9090, ListenAddress: "::1", ProcessName: "metrics"}},
-			},
-		},
-		{
-			name:   "mixed ipv4 and ipv6",
-			output: "p1\ncmain\nn*:9091\np2\nckube-rbac\nn[::]:8443\n",
-			ips:    []string{"10.0.0.1"},
-			wantProcesses: map[string]map[int]string{
-				"10.0.0.1": {9091: "main", 8443: "kube-rbac"},
-			},
-			wantListen: map[string]map[int]ListenInfo{
-				"10.0.0.1": {
-					9091: {Port: 9091, ListenAddress: "*", ProcessName: "main"},
-					8443: {Port: 8443, ListenAddress: "::", ProcessName: "kube-rbac"},
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotProc, gotListen := ParseLsofOutput(tt.output, tt.ips, "test-ns", "test-pod")
-			for ip, wantPorts := range tt.wantProcesses {
-				for port, wantName := range wantPorts {
-					if gotProc[ip][port] != wantName {
-						t.Errorf("processMap[%s][%d] = %q, want %q", ip, port, gotProc[ip][port], wantName)
-					}
-				}
-			}
-			for ip, wantPorts := range tt.wantListen {
-				for port, wantInfo := range wantPorts {
-					gotInfo, ok := gotListen[ip][port]
-					if !ok {
-						t.Errorf("listenInfoMap missing ip=%s port=%d", ip, port)
-						continue
-					}
-					if gotInfo != wantInfo {
-						t.Errorf("listenInfoMap[%s][%d] = %+v, want %+v", ip, port, gotInfo, wantInfo)
-					}
-				}
-			}
-		})
 	}
 }
 

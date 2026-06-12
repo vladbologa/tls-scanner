@@ -14,59 +14,62 @@ func TestParseProcNetTCPWithAddrs(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  map[int]string
+		want  map[int]ProcListenEntry
 	}{
 		{
 			name: "ipv4 localhost and wildcard",
 			input: `  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
    0: 0100007F:2438 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1 1 0000000000000000 100 0 0 10 0
    1: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 2 1 0000000000000000 100 0 0 10 0`,
-			want: map[int]string{9272: "127.0.0.1", 8080: "0.0.0.0"},
+			want: map[int]ProcListenEntry{
+				9272: {Addr: "127.0.0.1", Inode: 1},
+				8080: {Addr: "0.0.0.0", Inode: 2},
+			},
 		},
 		{
 			name: "ipv6 localhost",
 			input: `  sl  local_address                         remote_address                        st
    0: 00000000000000000000000001000000:2710 00000000000000000000000000000000:0000 0A`,
-			want: map[int]string{10000: "::1"},
+			want: map[int]ProcListenEntry{10000: {Addr: "::1"}},
 		},
 		{
 			name: "ipv6 wildcard",
 			input: `  sl  local_address                         remote_address                        st
    0: 00000000000000000000000000000000:01BB 00000000000000000000000000000000:0000 0A`,
-			want: map[int]string{443: "::"},
+			want: map[int]ProcListenEntry{443: {Addr: "::"}},
 		},
 		{
 			name: "wildcard before localhost — wildcard wins",
 			input: `  sl  local_address rem_address   st
    0: 00000000:01BB 00000000:0000 0A
    1: 0100007F:01BB 00000000:0000 0A`,
-			want: map[int]string{443: "0.0.0.0"},
+			want: map[int]ProcListenEntry{443: {Addr: "0.0.0.0"}},
 		},
 		{
 			name: "localhost before wildcard — wildcard still wins",
 			input: `  sl  local_address rem_address   st
    0: 0100007F:01BB 00000000:0000 0A
    1: 00000000:01BB 00000000:0000 0A`,
-			want: map[int]string{443: "0.0.0.0"},
+			want: map[int]ProcListenEntry{443: {Addr: "0.0.0.0"}},
 		},
 		{
 			name: "two localhost rows — stays localhost",
 			input: `  sl  local_address rem_address   st
    0: 0100007F:1F90 00000000:0000 0A
    1: 0100007F:1F90 00000000:0000 0A`,
-			want: map[int]string{8080: "127.0.0.1"},
+			want: map[int]ProcListenEntry{8080: {Addr: "127.0.0.1"}},
 		},
 		{
 			name: "non-listen state skipped",
 			input: `  sl  local_address rem_address   st
    0: 0100007F:C350 AC100164:01BB 01
    1: 00000000:01BB 00000000:0000 0A`,
-			want: map[int]string{443: "0.0.0.0"},
+			want: map[int]ProcListenEntry{443: {Addr: "0.0.0.0"}},
 		},
 		{
 			name:  "empty input",
 			input: "",
-			want:  map[int]string{},
+			want:  map[int]ProcListenEntry{},
 		},
 	}
 
@@ -77,6 +80,63 @@ func TestParseProcNetTCPWithAddrs(t *testing.T) {
 				t.Errorf("ParseProcNetTCPWithAddrs() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseInodeCommMap(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  map[uint64]string
+	}{
+		{
+			name:  "single mapping",
+			input: "12345 nginx\n",
+			want:  map[uint64]string{12345: "nginx"},
+		},
+		{
+			name:  "multiple mappings",
+			input: "1 kubelet\n2 crio\n",
+			want:  map[uint64]string{1: "kubelet", 2: "crio"},
+		},
+		{
+			name:  "skips malformed lines",
+			input: "bad\n12345 nginx\n",
+			want:  map[uint64]string{12345: "nginx"},
+		},
+		{
+			name:  "empty",
+			input: "",
+			want:  map[uint64]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseInodeCommMap(tt.input)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ParseInodeCommMap() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSplitMergedProcOutput(t *testing.T) {
+	tcp := "  sl  local_address rem_address   st\n   0: 00000000:01BB 00000000:0000 0A\n"
+	inode := "12345 nginx\n"
+	merged := tcp + "__INODE_MAP__\n" + inode
+
+	gotTCP, gotInode := splitMergedProcOutput(merged)
+	if gotTCP != tcp {
+		t.Errorf("tcp part = %q, want %q", gotTCP, tcp)
+	}
+	if gotInode != inode {
+		t.Errorf("inode part = %q, want %q", gotInode, inode)
+	}
+
+	gotTCP, gotInode = splitMergedProcOutput(tcp)
+	if gotTCP != tcp || gotInode != "" {
+		t.Errorf("without sentinel: tcp=%q inode=%q", gotTCP, gotInode)
 	}
 }
 
@@ -274,7 +334,7 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 	tests := []struct {
 		name          string
 		pod           *v1.Pod
-		lsofContainer string
+		execContainer string
 		want          []int
 	}{
 		{
@@ -284,18 +344,18 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 					{Name: "main", Ports: []v1.ContainerPort{{ContainerPort: 443, Protocol: v1.ProtocolTCP}}},
 				}},
 			},
-			lsofContainer: "main",
+			execContainer: "main",
 			want:          nil,
 		},
 		{
-			name: "excludes lsof container ports",
+			name: "excludes exec container ports",
 			pod: &v1.Pod{
 				Spec: v1.PodSpec{Containers: []v1.Container{
 					{Name: "main", Ports: []v1.ContainerPort{{ContainerPort: 443, Protocol: v1.ProtocolTCP}}},
 					{Name: "sidecar", Ports: []v1.ContainerPort{{ContainerPort: 8443, Protocol: v1.ProtocolTCP}}},
 				}},
 			},
-			lsofContainer: "main",
+			execContainer: "main",
 			want:          []int{8443},
 		},
 		{
@@ -307,7 +367,7 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 					{Name: "sidecar2", Ports: []v1.ContainerPort{{ContainerPort: 9090, Protocol: v1.ProtocolTCP}}},
 				}},
 			},
-			lsofContainer: "main",
+			execContainer: "main",
 			want:          []int{8443, 9090},
 		},
 		{
@@ -321,7 +381,7 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 					}},
 				}},
 			},
-			lsofContainer: "main",
+			execContainer: "main",
 			want:          []int{8443},
 		},
 	}
@@ -329,7 +389,7 @@ func TestDiscoverPortsFromSecondaryContainers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := DiscoverPortsFromSecondaryContainers(tt.pod, tt.lsofContainer)
+			got := DiscoverPortsFromSecondaryContainers(tt.pod, tt.execContainer)
 			sort.Ints(got)
 			sort.Ints(tt.want)
 			if !reflect.DeepEqual(got, tt.want) {

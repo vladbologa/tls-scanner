@@ -703,7 +703,7 @@ func TestFilterByProcessPorts(t *testing.T) {
 		want       []int
 	}{
 		{
-			name: "keeps lsof-mapped ports",
+			name: "keeps process-mapped ports",
 			processMap: map[string]map[int]string{
 				"10.0.0.1": {9091: "main", 9043: "sidecar"},
 			},
@@ -712,7 +712,7 @@ func TestFilterByProcessPorts(t *testing.T) {
 			want:      []int{9091, 9043},
 		},
 		{
-			name: "spec-declared port preserved when lsof misses it",
+			name: "spec-declared port preserved when process map misses it",
 			processMap: map[string]map[int]string{
 				"10.0.0.1": {9091: "main", 9043: "sidecar"},
 			},
@@ -730,7 +730,7 @@ func TestFilterByProcessPorts(t *testing.T) {
 			want:      []int{9091},
 		},
 		{
-			name: "nil specPorts — only lsof-owned ports kept",
+			name: "nil specPorts — only process-owned ports kept",
 			processMap: map[string]map[int]string{
 				"10.0.0.1": {9091: "main"},
 			},

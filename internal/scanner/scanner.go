@@ -90,8 +90,8 @@ func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client
 				}
 
 				var processMap map[string]map[int]string
-				if client != nil && len(pod.Containers) > 0 {
-					processMap = client.GetAndCachePodProcesses(pod)
+				if client != nil && procAvailable {
+					processMap = client.GetCachedProcessMap(pod.IPs)
 				}
 
 				if pod.Pod.Spec.HostNetwork && processMap != nil && len(procPorts) > 0 {
@@ -547,7 +547,7 @@ func LimitPodsToIPCount(pods []k8s.PodInfo, maxIPs int) []k8s.PodInfo {
 	return limitedPods
 }
 
-// filterByProcessPorts keeps procPorts owned by this pod (via lsof or pod spec).
+// filterByProcessPorts keeps procPorts owned by this pod (via /proc inode resolution or pod spec).
 func filterByProcessPorts(processMap map[string]map[int]string, procPorts []int, specPorts []int) []int {
 	owned := make(map[int]bool)
 	for _, portMap := range processMap {

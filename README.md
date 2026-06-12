@@ -94,7 +94,7 @@ The scanner produces a CSV file with detailed information about each scanned por
 | Pod Name           | Kubernetes pod name                                         |
 | Namespace          | Kubernetes namespace                                        |
 | Component Name     | OpenShift component name extracted from image               |
-| Process            | Process name listening on the port (from lsof)              |
+| Process            | Process name listening on the port (from /proc)             |
 | TLS Ciphers        | Detected TLS cipher suites                                  |
 | TLS Version        | Detected TLS versions (e.g., TLSv1.2, TLSv1.3)              |
 | **Status**         | Categorized scan result (see below)                         |

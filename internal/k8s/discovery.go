@@ -18,8 +18,10 @@ import (
 )
 
 const (
-	procStateListen = "0A"
-	podExecTimeout  = 30 * time.Second
+	procStateListen    = "0A"
+	podExecTimeout     = 30 * time.Second
+	inodeMapSentinel   = "__INODE_MAP__"
+	procDiscoveryShell = `cat /proc/net/tcp /proc/net/tcp6 2>/dev/null; printf '\n` + inodeMapSentinel + `\n'; for p in /proc/[0-9]*; do [ -f "$p/comm" ] || continue; comm=$(cat "$p/comm" 2>/dev/null) || continue; for fd in "$p"/fd/*; do target=$(readlink "$fd" 2>/dev/null) || continue; case "$target" in socket:\[*) inode=${target#socket:[}; inode=${inode%]}; echo "$inode $comm";; esac; done; done`
 )
 
 func DiscoverPortsFromPodSpec(pod *v1.Pod) ([]int, error) {
@@ -51,13 +53,13 @@ func DiscoverPortsFromPodSpec(pod *v1.Pod) ([]int, error) {
 	return ports, nil
 }
 
-// DiscoverPortsFromSecondaryContainers returns TCP ports from containers other than lsofContainer.
+// DiscoverPortsFromSecondaryContainers returns TCP ports from containers other than execContainer.
 //
 // TODO(refactor): extract shared tcpPortsFromContainers helper; drop never-used error return from DiscoverPortsFromPodSpec
-func DiscoverPortsFromSecondaryContainers(pod *v1.Pod, lsofContainer string) []int {
+func DiscoverPortsFromSecondaryContainers(pod *v1.Pod, execContainer string) []int {
 	var ports []int
 	for _, container := range pod.Spec.Containers {
-		if container.Name == lsofContainer {
+		if container.Name == execContainer {
 			continue
 		}
 		for _, port := range container.Ports {
@@ -76,10 +78,9 @@ func (c *Client) DiscoverPortsFromProc(pod PodInfo) ([]int, error) {
 
 	// /proc/net/tcp is part of the network namespace, which is shared across
 	// ALL containers in a pod. Reading from Containers[0] gives complete
-	// visibility into every listening socket, including those owned by
-	// *secondary* containers (which have separate PID namespaces and are
-	// therefore invisible to lsof).
-	command := []string{"/bin/sh", "-c", "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null"}
+	// visibility into every listening socket. Process names are resolved via
+	// socket inodes visible in Containers[0]'s PID namespace.
+	command := []string{"/bin/sh", "-c", procDiscoveryShell}
 	containerName := pod.Containers[0]
 
 	req := c.clientset.CoreV1().RESTClient().Post().
@@ -117,27 +118,16 @@ func (c *Client) DiscoverPortsFromProc(pod PodInfo) ([]int, error) {
 		return nil, fmt.Errorf("exec cat /proc/net/tcp in pod %s/%s failed: %w", pod.Namespace, pod.Name, err)
 	}
 
-	addrMap := ParseProcNetTCPWithAddrs(stdout.String())
+	tcpPart, inodePart := splitMergedProcOutput(stdout.String())
+	entries := ParseProcNetTCPWithAddrs(tcpPart)
+	inodeComm := ParseInodeCommMap(inodePart)
 
-	// Cache the decoded listen addresses so IsLocalhostOnly can use them as a
-	// fallback for ports owned by secondary containers (invisible to lsof).
-	if len(addrMap) > 0 {
-		c.processCacheMutex.Lock()
-		for _, ip := range pod.IPs {
-			if _, ok := c.procListenAddrMap[ip]; !ok {
-				c.procListenAddrMap[ip] = make(map[int]string)
-			}
-			for port, addr := range addrMap {
-				if _, exists := c.procListenAddrMap[ip][port]; !exists {
-					c.procListenAddrMap[ip][port] = addr
-				}
-			}
-		}
-		c.processCacheMutex.Unlock()
+	if len(entries) > 0 {
+		c.cacheProcListenInfo(pod, entries, inodeComm)
 	}
 
-	ports := make([]int, 0, len(addrMap))
-	for port := range addrMap {
+	ports := make([]int, 0, len(entries))
+	for port := range entries {
 		ports = append(ports, port)
 	}
 	slog.Debug("discovered listening ports from /proc/net/tcp", "namespace", pod.Namespace, "pod", pod.Name, "count", len(ports), "ports", ports)
@@ -146,9 +136,35 @@ func (c *Client) DiscoverPortsFromProc(pod PodInfo) ([]int, error) {
 
 // TODO(refactor): move ParseProcNetTCPWithAddrs + decodeProcNetAddr to internal/netdiscovery
 
+func splitMergedProcOutput(output string) (tcpPart, inodePart string) {
+	idx := strings.Index(output, inodeMapSentinel)
+	if idx < 0 {
+		return output, ""
+	}
+	tcpPart = output[:idx]
+	inodePart = strings.TrimPrefix(output[idx+len(inodeMapSentinel):], "\n")
+	return tcpPart, inodePart
+}
+
+// ParseInodeCommMap parses lines of "inode comm" emitted after inodeMapSentinel.
+func ParseInodeCommMap(output string) map[uint64]string {
+	result := make(map[uint64]string)
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		inode, err := strconv.ParseUint(fields[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		result[inode] = fields[1]
+	}
+	return result
+}
+
 // ParseProcNetTCPWithAddrs parses /proc/net/tcp (and /proc/net/tcp6) output and
-// returns a map of port → decoded listen address for every socket in the LISTEN
-// state.
+// returns a map of port → listen entry for every socket in the LISTEN state.
 //
 // When the same port appears on multiple rows (e.g. SO_REUSEPORT with mixed
 // bindings, or the same port in both /proc/net/tcp and /proc/net/tcp6), a
@@ -157,8 +173,8 @@ func (c *Client) DiscoverPortsFromProc(pod PodInfo) ([]int, error) {
 // when a port is bound to both 127.0.0.1 and 0.0.0.0.
 //
 // Addresses are returned as standard Go strings: "127.0.0.1", "0.0.0.0", "::1", "::", etc.
-func ParseProcNetTCPWithAddrs(output string) map[int]string {
-	result := make(map[int]string)
+func ParseProcNetTCPWithAddrs(output string) map[int]ProcListenEntry {
+	result := make(map[int]ProcListenEntry)
 
 	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(line)
@@ -181,14 +197,20 @@ func ParseProcNetTCPWithAddrs(output string) map[int]string {
 		port := int(port64)
 		addr := decodeProcNetAddr(parts[0])
 
+		var inode uint64
+		if len(fields) >= 10 {
+			inode, _ = strconv.ParseUint(fields[9], 10, 64)
+		}
+
+		entry := ProcListenEntry{Addr: addr, Inode: inode}
 		existing, seen := result[port]
 		if !seen {
-			result[port] = addr
-		} else if isLocalhostAddr(existing) && !isLocalhostAddr(addr) {
+			result[port] = entry
+		} else if isLocalhostAddr(existing.Addr) && !isLocalhostAddr(addr) {
 			// A reachable binding overrides a previously recorded loopback one.
 			// The inverse is never allowed: once we know a port is reachable we
 			// do not let a later loopback row make it look localhost-only.
-			result[port] = addr
+			result[port] = entry
 		}
 	}
 

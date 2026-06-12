@@ -60,17 +60,16 @@ func NewClient() (*Client, error) {
 	}
 
 	return &Client{
-		clientset:                 clientset,
-		restCfg:                   config,
-		dynamicClient:             dynamicClient,
-		processNameMap:            make(map[string]map[int]string),
-		listenInfoMap:             make(map[string]map[int]ListenInfo),
-		procListenAddrMap:         make(map[string]map[int]string),
-		processDiscoveryAttempted: make(map[string]bool),
-		namespace:                 namespace,
-		configClient:              configClient,
-		operatorClient:            operatorClient,
-		mcfgClient:                mcfgClient,
+		clientset:         clientset,
+		restCfg:           config,
+		dynamicClient:     dynamicClient,
+		processNameMap:    make(map[string]map[int]string),
+		listenInfoMap:     make(map[string]map[int]ListenInfo),
+		procListenAddrMap: make(map[string]map[int]string),
+		namespace:         namespace,
+		configClient:      configClient,
+		operatorClient:    operatorClient,
+		mcfgClient:        mcfgClient,
 	}, nil
 }
 

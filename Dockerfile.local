@@ -19,7 +19,7 @@ ARG TARGETARCH=amd64
 ARG TESTSSL_VERSION=3.2.2
 
 RUN dnf -y update && \
-    dnf install -y --allowerasing binutils file jq tar lsof openssl bash wget procps-ng hostname bind-utils net-tools coreutils socat && \
+    dnf install -y --allowerasing binutils file jq tar openssl bash wget procps-ng hostname bind-utils net-tools coreutils socat && \
     dnf clean all
 
 RUN wget -O "openshift-client-linux-${OC_VERSION}.tar.gz" "https://mirror.openshift.com/pub/openshift-v4/${TARGETARCH}/clients/ocp/${OC_VERSION}/openshift-client-linux.tar.gz" && \

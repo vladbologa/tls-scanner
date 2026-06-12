@@ -28,6 +28,12 @@ type ListenInfo struct {
 	ProcessName   string
 }
 
+// ProcListenEntry holds a decoded listen address and socket inode from /proc/net/tcp.
+type ProcListenEntry struct {
+	Addr  string
+	Inode uint64
+}
+
 type OpenshiftComponent struct {
 	Component           string `json:"component"`
 	SourceLocation      string `json:"source_location"`
@@ -69,14 +75,11 @@ type Client struct {
 	processNameMap map[string]map[int]string // TODO(refactor): redundant with listenInfoMap — remove
 	listenInfoMap  map[string]map[int]ListenInfo
 	// procListenAddrMap holds the decoded listen address for every port seen in
-	// /proc/net/tcp(6). It covers all containers in a pod (shared network
-	// namespace) and is used by IsLocalhostOnly as a fallback when lsof data is
-	// unavailable for a port (e.g. ports owned by secondary containers).
-	procListenAddrMap         map[string]map[int]string
-	processDiscoveryAttempted map[string]bool
-	processCacheMutex         sync.Mutex
-	namespace                 string
-	configClient              *configclientset.Clientset
-	operatorClient            *operatorclientset.Clientset
-	mcfgClient                *mcfgclientset.Clientset
+	// /proc/net/tcp(6). It covers all containers in a pod (shared network namespace).
+	procListenAddrMap map[string]map[int]string
+	processCacheMutex sync.Mutex
+	namespace         string
+	configClient      *configclientset.Clientset
+	operatorClient    *operatorclientset.Clientset
+	mcfgClient        *mcfgclientset.Clientset
 }

@@ -8,7 +8,7 @@ TLS compliance scanner for OpenShift/Kubernetes clusters. Runs as an in-cluster 
 
 ```
 cmd/tls-scanner/       Entry point, flag parsing, orchestration
-internal/k8s/          Kubernetes client, pod discovery, /proc port discovery, lsof, TLS profile extraction
+internal/k8s/          Kubernetes client, pod discovery, /proc port discovery, TLS profile extraction
 internal/scanner/      testssl.sh integration, result parsing, compliance checks, PQC readiness, policy engine
 internal/output/       JSON, CSV, JUnit, dry-run output writers
 internal/timing/       Scan timing collector
