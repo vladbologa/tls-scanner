@@ -163,6 +163,10 @@ var DefaultScanTimeouts = ScanTimeouts{
 	ConnectTimeout:   5,
 }
 
+// StarttlsPorts maps TCP port numbers to testssl.sh STARTTLS protocol names
+// (e.g., 5432→"postgres"). Populated from the --starttls-ports CLI flag.
+type StarttlsPorts map[int]string
+
 type ScanJob struct {
 	IP        string
 	Port      int

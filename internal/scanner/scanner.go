@@ -220,7 +220,7 @@ func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client
 	return DiscoveryResults{ScanJobs: scanJobs, Skipped: skipped}
 }
 
-func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy, timeouts ScanTimeouts, tlsProfileOverride *k8s.TLSSecurityProfile) ScanResults {
+func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy, timeouts ScanTimeouts, tlsProfileOverride *k8s.TLSSecurityProfile, starttlsPorts StarttlsPorts) ScanResults {
 	defer timing.Timings.Track("performClusterScan", "")()
 	startTime := time.Now()
 
@@ -255,7 +255,7 @@ MAX_PARALLEL (testssl): %d
 
 	discovery := DiscoverTargets(pods, concurrentScans, client)
 
-	batchResults := batchScan(discovery.ScanJobs, concurrentScans, client, tlsConfig, policy, timeouts)
+	batchResults := batchScan(discovery.ScanJobs, concurrentScans, client, tlsConfig, policy, timeouts, starttlsPorts)
 
 	results := assembleResults(startTime, totalIPs, tlsConfig, discovery.Skipped, batchResults)
 
@@ -277,7 +277,7 @@ MAX_PARALLEL (testssl): %d
 
 // Scan runs a batch testssl.sh scan on pre-built scan jobs.
 // Used by --targets and single-host paths (no k8s discovery needed).
-func Scan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8s.TLSSecurityProfile, policy *ComponentPolicy, timeouts ScanTimeouts) ScanResults {
+func Scan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8s.TLSSecurityProfile, policy *ComponentPolicy, timeouts ScanTimeouts, starttlsPorts StarttlsPorts) ScanResults {
 	defer timing.Timings.Track("scan", "")()
 	startTime := time.Now()
 
@@ -292,7 +292,7 @@ func Scan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8
 	fmt.Printf("MAX_PARALLEL: %d\n", concurrentScans)
 	fmt.Printf("========================================\n\n")
 
-	batchResults := batchScan(jobs, concurrentScans, client, tlsConfig, policy, timeouts)
+	batchResults := batchScan(jobs, concurrentScans, client, tlsConfig, policy, timeouts, starttlsPorts)
 	results := assembleResults(startTime, 0, tlsConfig, batchResults)
 
 	duration := time.Since(startTime)
@@ -310,7 +310,7 @@ func Scan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8
 	return results
 }
 
-func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8s.TLSSecurityProfile, policy *ComponentPolicy, timeouts ScanTimeouts) []portScanResult {
+func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfig *k8s.TLSSecurityProfile, policy *ComponentPolicy, timeouts ScanTimeouts, starttlsPorts StarttlsPorts) []portScanResult {
 	if len(jobs) == 0 {
 		return nil
 	}
@@ -319,7 +319,7 @@ func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfi
 	var directJobs []ScanJob
 	starttlsGroups := make(map[string][]ScanJob)
 	for _, job := range jobs {
-		if proto := starttlsProtocol(job.Port); proto != "" {
+		if proto := starttlsPorts[job.Port]; proto != "" {
 			starttlsGroups[proto] = append(starttlsGroups[proto], job)
 		} else {
 			directJobs = append(directJobs, job)
@@ -669,17 +669,6 @@ func writeTargetsFile(targets []string) (string, error) {
 	}
 	f.Close()
 	return f.Name(), nil
-}
-
-// starttlsProtocol returns the testssl.sh --starttls protocol name for a port,
-// or "" if the port uses direct TLS.
-func starttlsProtocol(port int) string {
-	switch port {
-	case 5432:
-		return "postgres"
-	default:
-		return ""
-	}
 }
 
 func targetKey(host, port string) string {
