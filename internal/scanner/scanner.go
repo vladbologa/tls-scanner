@@ -220,7 +220,7 @@ func DiscoverTargets(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client
 	return DiscoveryResults{ScanJobs: scanJobs, Skipped: skipped}
 }
 
-func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy, timeouts ScanTimeouts) ScanResults {
+func PerformClusterScan(pods []k8s.PodInfo, concurrentScans int, client *k8s.Client, policy *ComponentPolicy, timeouts ScanTimeouts, tlsProfileOverride *k8s.TLSSecurityProfile) ScanResults {
 	defer timing.Timings.Track("performClusterScan", "")()
 	startTime := time.Now()
 
@@ -240,7 +240,12 @@ MAX_PARALLEL (testssl): %d
 `, len(pods), totalIPs, concurrentScans)
 
 	var tlsConfig *k8s.TLSSecurityProfile
-	if client != nil {
+	if tlsProfileOverride != nil {
+		tlsConfig = tlsProfileOverride
+		if tlsConfig.APIServer != nil {
+			slog.Info("using TLS security profile override", "type", tlsConfig.APIServer.Type)
+		}
+	} else if client != nil {
 		if config, err := client.GetTLSSecurityProfile(); err != nil {
 			slog.Warn("could not collect TLS security profiles", "error", err)
 		} else {

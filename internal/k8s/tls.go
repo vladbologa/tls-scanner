@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -157,4 +158,43 @@ func (c *Client) getKubeletTLS(fallback *APIServerTLSProfile) (*KubeletTLSProfil
 	}
 
 	return nil, fmt.Errorf("no KubeletConfig with a TLSSecurityProfile found in the cluster")
+}
+
+// NewTLSSecurityProfileFromType builds a TLSSecurityProfile from a predefined
+// OpenShift TLS profile type (Old, Intermediate, Modern). Components without an
+// explicit override inherit the APIServer profile, matching standalone OpenShift
+// behavior. Used when the cluster APIServer CR does not reflect the effective
+// profile, such as HyperShift hosted control planes.
+func NewTLSSecurityProfileFromType(profileType string) (*TLSSecurityProfile, error) {
+	var normalized configv1.TLSProfileType
+	switch strings.ToLower(strings.TrimSpace(profileType)) {
+	case "old":
+		normalized = configv1.TLSProfileOldType
+	case "intermediate":
+		normalized = configv1.TLSProfileIntermediateType
+	case "modern":
+		normalized = configv1.TLSProfileModernType
+	default:
+		return nil, fmt.Errorf("unsupported TLS profile type %q (supported: Old, Intermediate, Modern)", profileType)
+	}
+
+	predefined := configv1.TLSProfiles[normalized]
+	apiServer := &APIServerTLSProfile{
+		Type:          string(normalized),
+		Ciphers:       predefined.Ciphers,
+		MinTLSVersion: string(predefined.MinTLSVersion),
+	}
+
+	return &TLSSecurityProfile{
+		APIServer: apiServer,
+		IngressController: &IngressTLSProfile{
+			Type:          apiServer.Type,
+			Ciphers:       apiServer.Ciphers,
+			MinTLSVersion: apiServer.MinTLSVersion,
+		},
+		KubeletConfig: &KubeletTLSProfile{
+			TLSCipherSuites: apiServer.Ciphers,
+			MinTLSVersion:   apiServer.MinTLSVersion,
+		},
+	}, nil
 }

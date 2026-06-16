@@ -7,6 +7,29 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func TestNewTLSSecurityProfileFromTypeModern(t *testing.T) {
+	t.Parallel()
+
+	got, err := NewTLSSecurityProfileFromType("Modern")
+	if err != nil {
+		t.Fatalf("NewTLSSecurityProfileFromType() error = %v", err)
+	}
+	if got.APIServer.Type != "Modern" {
+		t.Errorf("APIServer.Type = %q, want Modern", got.APIServer.Type)
+	}
+	if got.IngressController.Type != "Modern" {
+		t.Errorf("IngressController.Type = %q, want Modern", got.IngressController.Type)
+	}
+}
+
+func TestNewTLSSecurityProfileFromTypeInvalid(t *testing.T) {
+	t.Parallel()
+
+	if _, err := NewTLSSecurityProfileFromType("Custom"); err == nil {
+		t.Fatal("expected error for unsupported profile type")
+	}
+}
+
 func TestExtractAPIServerTLSNilProfile(t *testing.T) {
 	t.Parallel()
 

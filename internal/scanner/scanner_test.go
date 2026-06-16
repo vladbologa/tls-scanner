@@ -98,7 +98,7 @@ func TestPerformClusterScanWithMockPods(t *testing.T) {
 		makePod("no-ports", "openshift-console", "10.128.0.30"),
 	}
 
-	results := PerformClusterScan(pods, 2, nil, testPolicy(t), DefaultScanTimeouts)
+	results := PerformClusterScan(pods, 2, nil, testPolicy(t), DefaultScanTimeouts, nil)
 
 	if results.ScannedIPs != 3 {
 		t.Errorf("expected 3 scanned IPs (including no-ports), got %d", results.ScannedIPs)
