@@ -74,6 +74,7 @@ func run(args []string) (exitCode int) {
 	logLevel := fs.String("log-level", "info", "Log level: debug, info, warn, error")
 	scanTimeoutPerTarget := fs.Int("scan-timeout-per-target", scanner.DefaultScanTimeouts.PerTargetSeconds, "Seconds per target for batch scan timeout calculation")
 	connectTimeout := fs.Int("connect-timeout", scanner.DefaultScanTimeouts.ConnectTimeout, "Timeout in seconds for testssl.sh connect and openssl operations")
+	tlsProfileType := fs.String("tls-profile-type", "", "Expected cluster TLS profile type for compliance checks (Old, Intermediate, Modern). When set, skips reading APIServer/cluster from the API.")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -130,6 +131,15 @@ func run(args []string) (exitCode int) {
 	if err != nil {
 		slog.Error("loading policy", "error", err)
 		return 1
+	}
+
+	var tlsProfileOverride *k8s.TLSSecurityProfile
+	if *tlsProfileType != "" {
+		tlsProfileOverride, err = k8s.NewTLSSecurityProfileFromType(*tlsProfileType)
+		if err != nil {
+			slog.Error("invalid tls profile type", "error", err)
+			return 2
+		}
 	}
 
 	defer func() {
@@ -272,7 +282,7 @@ func run(args []string) (exitCode int) {
 	}
 
 	if len(pods) > 0 {
-		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy, timeouts)
+		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy, timeouts, tlsProfileOverride)
 		finalScanResults = &scanResults
 
 		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
