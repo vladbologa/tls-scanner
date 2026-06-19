@@ -4,6 +4,23 @@ import (
 	"testing"
 )
 
+func TestStarttlsProtoForProcess(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		comm string
+		want string
+	}{
+		{"postgres", "postgres"},
+		{"mysqld", "mysql"},
+		{"nginx", ""},
+		{"", ""},
+	} {
+		if got := StarttlsProtoForProcess(tc.comm); got != tc.want {
+			t.Errorf("StarttlsProtoForProcess(%q) = %q, want %q", tc.comm, got, tc.want)
+		}
+	}
+}
+
 func TestParseStarttlsPorts(t *testing.T) {
 	tests := []struct {
 		name    string

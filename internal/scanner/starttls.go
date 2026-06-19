@@ -25,6 +25,15 @@ var knownStarttlsProtocols = map[string]bool{
 	"mysql":       true,
 }
 
+var commToStarttls = map[string]string{
+	"postgres": "postgres",
+	"mysqld":   "mysql",
+}
+
+func StarttlsProtoForProcess(comm string) string {
+	return commToStarttls[comm]
+}
+
 // ParseStarttlsPorts parses a --starttls-ports flag value into a StarttlsPorts
 // map. The format is: protocol=port[:port...][,protocol=port[:port...]]
 // Example: postgres=5432:6432,mysql=3306

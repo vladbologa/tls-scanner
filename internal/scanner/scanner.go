@@ -316,11 +316,22 @@ func batchScan(jobs []ScanJob, concurrentScans int, client *k8s.Client, tlsConfi
 	}
 
 	// Split jobs into direct-TLS and STARTTLS groups.
+	// Explicit --starttls-ports mappings take priority; otherwise fall back to
+	// process-name auto-detection (e.g. comm "postgres" → STARTTLS postgres).
 	var directJobs []ScanJob
 	starttlsGroups := make(map[string][]ScanJob)
 	for _, job := range jobs {
 		if proto := starttlsPorts[job.Port]; proto != "" {
 			starttlsGroups[proto] = append(starttlsGroups[proto], job)
+		} else if client != nil {
+			if comm, ok := client.GetProcessName(job.IP, job.Port); ok {
+				if proto := StarttlsProtoForProcess(comm); proto != "" {
+					slog.Info("auto-detected STARTTLS protocol from process name", "ip", job.IP, "port", job.Port, "process", comm, "protocol", proto)
+					starttlsGroups[proto] = append(starttlsGroups[proto], job)
+					continue
+				}
+			}
+			directJobs = append(directJobs, job)
 		} else {
 			directJobs = append(directJobs, job)
 		}
