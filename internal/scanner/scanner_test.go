@@ -34,6 +34,55 @@ func makePod(name, namespace, ip string, ports ...int32) k8s.PodInfo {
 	}
 }
 
+func TestBatchScanStarttlsRouting(t *testing.T) {
+	testutil.InstallMockTestSSL(t)
+
+	jobs := []ScanJob{
+		{IP: "10.0.0.1", Port: 443},
+		{IP: "10.0.0.2", Port: 5432},
+		{IP: "10.0.0.3", Port: 8443},
+		{IP: "10.0.0.4", Port: 3306},
+	}
+	starttlsPorts := StarttlsPorts{5432: "postgres", 3306: "mysql"}
+
+	results := batchScan(jobs, 4, nil, nil, testPolicy(t), DefaultScanTimeouts, starttlsPorts)
+
+	if len(results) != 4 {
+		t.Fatalf("expected 4 results, got %d", len(results))
+	}
+
+	resultByIP := map[string]portScanResult{}
+	for _, r := range results {
+		resultByIP[r.ip] = r
+	}
+
+	for _, tc := range []struct {
+		ip            string
+		wantSTARTTLS  string
+		wantPort      int
+	}{
+		{"10.0.0.1", "", 443},
+		{"10.0.0.2", "postgres", 5432},
+		{"10.0.0.3", "", 8443},
+		{"10.0.0.4", "mysql", 3306},
+	} {
+		r, ok := resultByIP[tc.ip]
+		if !ok {
+			t.Errorf("missing result for %s", tc.ip)
+			continue
+		}
+		if r.result.STARTTLSProtocol != tc.wantSTARTTLS {
+			t.Errorf("%s: STARTTLSProtocol = %q, want %q", tc.ip, r.result.STARTTLSProtocol, tc.wantSTARTTLS)
+		}
+		if r.result.Port != tc.wantPort {
+			t.Errorf("%s: Port = %d, want %d", tc.ip, r.result.Port, tc.wantPort)
+		}
+		if r.result.Status != StatusOK {
+			t.Errorf("%s: Status = %s, want OK", tc.ip, r.result.Status)
+		}
+	}
+}
+
 func TestScanWithMockTestSSL(t *testing.T) {
 	testutil.InstallMockTestSSL(t)
 
@@ -41,7 +90,7 @@ func TestScanWithMockTestSSL(t *testing.T) {
 		{IP: "10.0.0.1", Port: 443},
 		{IP: "10.0.0.2", Port: 8443},
 	}
-	results := Scan(jobs, 2, nil, nil, testPolicy(t), DefaultScanTimeouts)
+	results := Scan(jobs, 2, nil, nil, testPolicy(t), DefaultScanTimeouts, nil)
 
 	if results.ScannedIPs != 2 {
 		t.Fatalf("expected 2 scanned IPs, got %d", results.ScannedIPs)
@@ -65,7 +114,7 @@ func TestScanPQCEnrichment(t *testing.T) {
 	testutil.InstallMockTestSSL(t)
 
 	jobs := []ScanJob{{IP: "10.0.0.1", Port: 443}}
-	results := Scan(jobs, 1, nil, nil, testPolicy(t), DefaultScanTimeouts)
+	results := Scan(jobs, 1, nil, nil, testPolicy(t), DefaultScanTimeouts, nil)
 
 	pr := results.IPResults[0].PortResults[0]
 
@@ -98,7 +147,7 @@ func TestPerformClusterScanWithMockPods(t *testing.T) {
 		makePod("no-ports", "openshift-console", "10.128.0.30"),
 	}
 
-	results := PerformClusterScan(pods, 2, nil, testPolicy(t), DefaultScanTimeouts, nil)
+	results := PerformClusterScan(pods, 2, nil, testPolicy(t), DefaultScanTimeouts, nil, nil)
 
 	if results.ScannedIPs != 3 {
 		t.Errorf("expected 3 scanned IPs (including no-ports), got %d", results.ScannedIPs)

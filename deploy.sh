@@ -22,6 +22,7 @@
 #   SCANNER_PARALLEL - Parallel scan count (default: 4)
 #   ARTIFACT_WAIT    - Seconds to keep pod alive after scan for artifact collection (default: 30, CI uses 300)
 #   TLS_TEST_TIMEOUT - Timeout for cluster stabilization during TLS tests (default: 600)
+#   STARTTLS_PORTS   - (Optional) STARTTLS protocol-to-port mapping (e.g., postgres=5432:6432,mysql=3306)
 
 # --- Configuration ---
 APP_NAME="tls-scanner"
@@ -202,11 +203,16 @@ EOF
         echo "--> Limiting scan to first ${LIMIT_IPS} IPs (testing mode)"
     fi
 
+    STARTTLS_PORTS_ARG=""
+    if [ -n "$STARTTLS_PORTS" ]; then
+        STARTTLS_PORTS_ARG="--starttls-ports $(echo "${STARTTLS_PORTS}" | tr -d ' ')"
+    fi
+
     SCANNER_CPU="${SCANNER_CPU:-4}"
     SCANNER_MEM="${SCANNER_MEM:-4Gi}"
     SCANNER_PARALLEL="${SCANNER_PARALLEL:-4}"
     ARTIFACT_WAIT="${ARTIFACT_WAIT:-30}"
-    sed -e "s|\\\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\\\${NAMESPACE}|${NAMESPACE}|g" -e "s|\\\${JOB_NAME}|${JOB_NAME}|g" -e "s|\\\${NAMESPACE_FILTER_ARG}|${NAMESPACE_FILTER_ARG}|g" -e "s|\\\${LIMIT_IPS_ARG}|${LIMIT_IPS_ARG}|g" -e "s|\\\${SCANNER_CPU:-4}|${SCANNER_CPU}|g" -e "s|\\\${SCANNER_MEM:-4Gi}|${SCANNER_MEM}|g" -e "s|\\\${SCANNER_PARALLEL:-4}|${SCANNER_PARALLEL}|g" -e "s|\\\${ARTIFACT_WAIT:-300}|${ARTIFACT_WAIT}|g" "$JOB_TEMPLATE" | oc apply -f -
+    sed -e "s|\\\${SCANNER_IMAGE}|${SCANNER_IMAGE}|g" -e "s|\\\${NAMESPACE}|${NAMESPACE}|g" -e "s|\\\${JOB_NAME}|${JOB_NAME}|g" -e "s|\\\${NAMESPACE_FILTER_ARG}|${NAMESPACE_FILTER_ARG}|g" -e "s|\\\${LIMIT_IPS_ARG}|${LIMIT_IPS_ARG}|g" -e "s|\\\${STARTTLS_PORTS_ARG}|${STARTTLS_PORTS_ARG}|g" -e "s|\\\${SCANNER_CPU:-4}|${SCANNER_CPU}|g" -e "s|\\\${SCANNER_MEM:-4Gi}|${SCANNER_MEM}|g" -e "s|\\\${SCANNER_PARALLEL:-4}|${SCANNER_PARALLEL}|g" -e "s|\\\${ARTIFACT_WAIT:-300}|${ARTIFACT_WAIT}|g" "$JOB_TEMPLATE" | oc apply -f -
     check_error "Applying Job manifest"
 
     echo "--> Scanner Job '${JOB_NAME}' deployed."

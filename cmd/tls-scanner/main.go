@@ -75,6 +75,7 @@ func run(args []string) (exitCode int) {
 	scanTimeoutPerTarget := fs.Int("scan-timeout-per-target", scanner.DefaultScanTimeouts.PerTargetSeconds, "Seconds per target for batch scan timeout calculation")
 	connectTimeout := fs.Int("connect-timeout", scanner.DefaultScanTimeouts.ConnectTimeout, "Timeout in seconds for testssl.sh connect and openssl operations")
 	tlsProfileType := fs.String("tls-profile-type", "", "Expected cluster TLS profile type for compliance checks (Old, Intermediate, Modern). When set, skips reading APIServer/cluster from the API.")
+	starttlsPortsFlag := fs.String("starttls-ports", "", "STARTTLS protocol-to-port mapping (e.g., postgres=5432:6432,mysql=3306)")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -125,6 +126,12 @@ func run(args []string) (exitCode int) {
 	timeouts := scanner.ScanTimeouts{
 		PerTargetSeconds: *scanTimeoutPerTarget,
 		ConnectTimeout:   *connectTimeout,
+	}
+
+	starttlsPorts, err := scanner.ParseStarttlsPorts(*starttlsPortsFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 2
 	}
 
 	policy, err := scanner.Policy()
@@ -196,7 +203,7 @@ func run(args []string) (exitCode int) {
 			return 0
 		}
 
-		scanResults := scanner.Scan(jobs, *concurrentScans, nil, tlsProfileOverride, policy, timeouts)
+		scanResults := scanner.Scan(jobs, *concurrentScans, nil, tlsProfileOverride, policy, timeouts, starttlsPorts)
 		finalScanResults = &scanResults
 
 		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
@@ -219,7 +226,7 @@ func run(args []string) (exitCode int) {
 			return 1
 		}
 
-		scanResults := scanner.Scan(jobs, *concurrentScans, nil, tlsProfileOverride, policy, timeouts)
+		scanResults := scanner.Scan(jobs, *concurrentScans, nil, tlsProfileOverride, policy, timeouts, starttlsPorts)
 		finalScanResults = &scanResults
 
 		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
@@ -282,7 +289,7 @@ func run(args []string) (exitCode int) {
 	}
 
 	if len(pods) > 0 {
-		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy, timeouts, tlsProfileOverride)
+		scanResults := scanner.PerformClusterScan(pods, *concurrentScans, client, policy, timeouts, tlsProfileOverride, starttlsPorts)
 		finalScanResults = &scanResults
 
 		if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {
@@ -311,7 +318,7 @@ func run(args []string) (exitCode int) {
 		return 0
 	}
 
-	scanResults := scanner.Scan(jobs, *concurrentScans, client, tlsProfileOverride, policy, timeouts)
+	scanResults := scanner.Scan(jobs, *concurrentScans, client, tlsProfileOverride, policy, timeouts, starttlsPorts)
 	finalScanResults = &scanResults
 
 	if err := output.WriteOutputFiles(scanResults, *artifactDir, *jsonFile, *csvFile, *junitFile, isPQCCheck); err != nil {

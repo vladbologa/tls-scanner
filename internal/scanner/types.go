@@ -107,6 +107,7 @@ type PortResult struct {
 	Protocol                     string                     `json:"protocol"`
 	State                        string                     `json:"state"`
 	Service                      string                     `json:"service"`
+	STARTTLSProtocol             string                     `json:"starttls_protocol,omitempty"`
 	ProcessName                  string                     `json:"process_name,omitempty"`
 	ContainerName                string                     `json:"container_name,omitempty"`
 	TlsVersions                  []string                   `json:"tls_versions,omitempty"`
@@ -161,6 +162,10 @@ var DefaultScanTimeouts = ScanTimeouts{
 	PerTargetSeconds: 90,
 	ConnectTimeout:   5,
 }
+
+// StarttlsPorts maps TCP port numbers to testssl.sh STARTTLS protocol names
+// (e.g., 5432→"postgres"). Populated from the --starttls-ports CLI flag.
+type StarttlsPorts map[int]string
 
 type ScanJob struct {
 	IP        string

@@ -14,13 +14,17 @@ import (
 const MockTestSSLScript = `#!/bin/bash
 JSONFILE=""
 TARGETS_FILE=""
+STARTTLS=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --jsonfile) JSONFILE="$2"; shift 2;;
         --file) TARGETS_FILE="$2"; shift 2;;
+        --starttls) STARTTLS="$2"; shift 2;;
         *) shift;;
     esac
 done
+SERVICE="https"
+[ -n "$STARTTLS" ] && SERVICE="$STARTTLS"
 {
 printf '['
 FIRST=true
@@ -28,11 +32,11 @@ while IFS= read -r target; do
     ip="${target%%:*}"
     port="${target##*:}"
     [ "$FIRST" = true ] && FIRST=false || printf ','
-    printf '{"id":"TLS1_2","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)"},' "$ip" "$ip" "$port"
-    printf '{"id":"TLS1_3","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)"},' "$ip" "$ip" "$port"
-    printf '{"id":"FS","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)"}' "$ip" "$ip" "$port"
+    printf '{"id":"TLS1_2","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"
+    printf '{"id":"TLS1_3","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"},' "$ip" "$ip" "$port" "$SERVICE"
+    printf '{"id":"FS","ip":"%s/%s","port":"%s","severity":"OK","finding":"offered (OK)","service":"%s"}' "$ip" "$ip" "$port" "$SERVICE"
     if [ -z "${MOCK_NO_MLKEM:-}" ]; then
-        printf ',{"id":"FS_KEMs","ip":"%s/%s","port":"%s","severity":"OK","finding":"x25519mlkem768"}' "$ip" "$ip" "$port"
+        printf ',{"id":"FS_KEMs","ip":"%s/%s","port":"%s","severity":"OK","finding":"x25519mlkem768","service":"%s"}' "$ip" "$ip" "$port" "$SERVICE"
     fi
 done < "$TARGETS_FILE"
 printf ']'

@@ -188,6 +188,7 @@ The scanner binary accepts the following command-line options. These are configu
 - `-junit-file <file>` - Output results in JUnit XML format to specified file
 - `-log-file <file>` - Redirect all log output to the specified file
 - `-timing-file <file>` - Write timing report to specified file in artifact-dir
+- `-starttls-ports <mapping>` - Enable STARTTLS for specific ports (e.g., `postgres=5432:6432,mysql=3306`). Comma separates protocols, colon separates multiple ports within a protocol. Supported protocols: `ftp`, `smtp`, `lmtp`, `pop3`, `imap`, `xmpp`, `xmpp-server`, `telnet`, `ldap`, `nntp`, `sieve`, `postgres`, `mysql`. **Auto-detection:** When process names are available from `/proc` discovery (e.g., `postgres`, `mysqld`), STARTTLS is used automatically without needing this flag. Explicit `--starttls-ports` mappings take priority over auto-detection.
 - `-version` - Print version and exit
 
 
